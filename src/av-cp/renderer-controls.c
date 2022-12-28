@@ -41,6 +41,9 @@ GtkWidget *stop_button;
 GtkWidget *next_button;
 GtkWidget *prev_button;
 GtkWidget *lenient_mode_menuitem;
+GtkWidget *set_uri_button;
+GtkWidget *set_uri_entry;
+GtkWidget *track_uri_entry;
 
 static guint timeout_id;
 
@@ -70,6 +73,10 @@ on_clear_state_button_clicked (GtkButton *button,
 gboolean
 on_position_scale_value_changed (GtkRange *range,
                                  gpointer  user_data);
+
+void
+on_set_uri_button_clicked (GtkButton *button,
+                           gpointer   user_data);
 
 typedef struct
 {
@@ -536,6 +543,7 @@ get_position_info_cb (GObject *object, GAsyncResult *res, gpointer user_data)
 {
         gchar       *position;
         gchar       *duration;
+        gchar       *track_uri;
         const gchar *udn;
         GError *error = NULL;
         GUPnPServiceProxyAction *action;
@@ -561,6 +569,9 @@ get_position_info_cb (GObject *object, GAsyncResult *res, gpointer user_data)
                                                     "TrackDuration",
                                                     G_TYPE_STRING,
                                                     &duration,
+                                                    "TrackURI",
+                                                    G_TYPE_STRING,
+                                                    &track_uri,
                                                     NULL)) {
                 g_warning ("Failed to get current media position"
                            "from media renderer '%s':%s\n",
@@ -575,9 +586,11 @@ get_position_info_cb (GObject *object, GAsyncResult *res, gpointer user_data)
         char *tooltip = g_strdup_printf ("%s/%s", position, duration);
         gtk_widget_set_tooltip_text (GTK_WIDGET (position_scale), tooltip);
         gtk_widget_set_has_tooltip (GTK_WIDGET (position_scale), TRUE);
+	gtk_entry_set_text (GTK_ENTRY (track_uri_entry), track_uri);
         g_free (tooltip);
         g_free (position);
         g_free (duration);
+	g_free (track_uri);
 
 return_point:
         g_clear_error (&error);
@@ -820,6 +833,18 @@ setup_renderer_controls (GtkBuilder *builder)
                                                 "lenient_mode_menuitem"));
         g_assert (lenient_mode_menuitem != NULL);
 
+        track_uri_entry = GTK_WIDGET (gtk_builder_get_object (builder,
+                                                              "track_uri_entry"));
+        g_assert (track_uri_entry != NULL);
+
+        set_uri_button = GTK_WIDGET (gtk_builder_get_object (builder,
+                                                             "set_uri_button"));
+        g_assert (set_uri_button != NULL);
+
+        set_uri_entry = GTK_WIDGET (gtk_builder_get_object (builder,
+                                                            "set_uri_entry"));
+        g_assert (set_uri_entry != NULL);
+
         timeout_id = 0;
 
         g_object_weak_ref (G_OBJECT (position_scale),
@@ -827,3 +852,92 @@ setup_renderer_controls (GtkBuilder *builder)
                            NULL);
 }
 
+static void
+set_selected_renderer_uri_cb (GObject *object, GAsyncResult *res, gpointer user_data)
+{
+        GError *error = NULL;
+        const char *udn;
+	char *uri = (char *)user_data;
+
+        udn = gupnp_service_info_get_udn (GUPNP_SERVICE_INFO (object));
+
+        GUPnPServiceProxyAction *action;
+        action = gupnp_service_proxy_call_action_finish (
+                GUPNP_SERVICE_PROXY (object),
+                res,
+                &error);
+
+        // The above call will only catch issues with the HTTP transport, not
+        // with the call itself. So we need to call an empty get on the action
+        // as well to get any SOAP error
+        if (error == NULL) {
+                gupnp_service_proxy_action_get_result (action, &error, NULL);
+        }
+        if (error != NULL) {
+                g_warning ("Failed to set URI '%s' on %s: %s",
+			   uri,
+                           udn,
+                           error->message);
+        } else {
+		play(); // call play directly
+        }
+
+        g_clear_error (&error);
+        g_object_unref (object);
+	g_free (uri); // free the uri strdup-ed
+}
+
+
+static void
+set_selected_renderer_uri()
+{
+        GUPnPServiceProxy     *av_transport;
+        const char            *uri_text;
+        char                  *uri;
+        GUPnPServiceProxyAction *action;
+
+	uri_text = gtk_entry_get_text (GTK_ENTRY (set_uri_entry));
+	if (uri_text == NULL) {
+		g_warning ("No URI input given.");
+		return;
+	}
+	uri = g_strstrip (g_strdup (uri_text));
+	if (g_utf8_strlen(uri, -1) == 0) {
+		g_free (uri);
+		g_warning ("Blank URI input given.");
+		return;
+	}
+
+        av_transport = get_selected_av_transport (NULL);
+        if (av_transport == NULL) {
+                g_warning ("No renderer selected");
+                return;
+        }
+
+        action = gupnp_service_proxy_action_new ("SetAVTransportURI",
+                                                 "InstanceID",
+                                                 G_TYPE_UINT,
+                                                 0,
+                                                 "CurrentURI",
+                                                 G_TYPE_STRING,
+                                                 uri,
+                                                 "CurrentURIMetaData",
+                                                 G_TYPE_STRING,
+                                                 "",
+                                                 NULL);
+
+        gupnp_service_proxy_call_action_async (av_transport,
+                                               action,
+                                               NULL,
+                                               set_selected_renderer_uri_cb,
+                                               uri);
+        gupnp_service_proxy_action_unref (action);
+}
+
+G_MODULE_EXPORT
+void
+on_set_uri_button_clicked (GtkButton *button,
+                           gpointer   user_data)
+{
+        set_selected_renderer_uri ();
+}
