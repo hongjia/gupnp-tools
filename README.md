@@ -26,3 +26,8 @@ test and debug one's UPnP devices and control points:
   * Upload: a simple commandline utility that uploads files to known
     MediaServers. Use Universal Control Point for discovering the MediaServers.
 
+Modifications
+===========
+  * gupnp-av-cp:
+    - Showing current Track URI of selected renderer
+    - Set renderer media address directly from URI input
