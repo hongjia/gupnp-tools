@@ -272,6 +272,8 @@ set_state (GtkTreeModel *model,
         }
 }
 
+static gboolean update_transport_info_once (gpointer data);
+
 static void
 set_state_by_name (const gchar *udn,
                    const gchar *state_name)
@@ -289,6 +291,16 @@ set_state_by_name (const gchar *udn,
                 state = state_name_to_state (state_name),
 
                 set_state (model, &iter, state);
+
+		if (state == PLAYBACK_STATE_TRANSITIONING) {
+                        GUPnPServiceProxy *av_transport;
+			gtk_tree_model_get (model,
+                            &iter,
+                            3, &av_transport,
+                            -1);
+			g_timeout_add (1000, update_transport_info_once,
+				g_object_ref (av_transport));
+		}
         }
 }
 
@@ -910,3 +922,24 @@ setup_renderer_combo (GtkBuilder *builder)
                                                 "renderer-combobox"));
 }
 
+static gboolean
+update_transport_info_once (gpointer data)
+{
+        GUPnPServiceProxyAction *action;
+        GUPnPServiceProxy *av_transport = (GUPnPServiceProxy *)data;
+
+        action = gupnp_service_proxy_action_new ("GetTransportInfo",
+                                                 "InstanceID",
+                                                 G_TYPE_UINT,
+                                                 0,
+                                                 NULL);
+        gupnp_service_proxy_call_action_async (g_object_ref (av_transport),
+                                               action,
+                                               NULL,
+                                               get_transport_info_cb,
+                                               NULL);
+        gupnp_service_proxy_action_unref (action);
+
+	g_object_unref (av_transport);
+	return FALSE; // once
+}

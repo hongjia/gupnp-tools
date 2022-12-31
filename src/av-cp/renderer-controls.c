@@ -889,7 +889,7 @@ set_selected_renderer_uri_cb (GObject *object, GAsyncResult *res, gpointer user_
 
 
 static void
-set_selected_renderer_uri()
+set_selected_renderer_uri ()
 {
         GUPnPServiceProxy     *av_transport;
         const char            *uri_text;
@@ -902,7 +902,7 @@ set_selected_renderer_uri()
 		return;
 	}
 	uri = g_strstrip (g_strdup (uri_text));
-	if (g_utf8_strlen(uri, -1) == 0) {
+	if (g_utf8_strlen (uri, -1) == 0) {
 		g_free (uri);
 		g_warning ("Blank URI input given.");
 		return;
